@@ -1,0 +1,18 @@
+fastapi==0.110.2
+uvicorn==0.29.0
+pydantic==2.7.1
+
+httpx==0.27.0
+beautifulsoup4==4.12.3
+html2text==2020.1.16  # or markdownify if you used that
+
+sentence-transformers==2.7.0
+faiss-cpu==1.7.4
+
+numpy==1.26.4
+pillow==10.3.0
+pytesseract==0.3.10
+
+python-multipart==0.0.9  # If you later support file upload
+
+python-dotenv==1.0.0  # For loading environment variables
