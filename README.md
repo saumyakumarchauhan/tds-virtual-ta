@@ -120,19 +120,25 @@ curl -X POST http://127.0.0.1:8000/api/   -H "Content-Type: application/json"   
 
 ```
 tds-virtual-ta/
+├── Dockerfile
+├── LICENSE
+├── README.md
+├── requirements.txt
 ├── main.py
 ├── create_faiss_index.py
+├── discourse_embeddings.py
+├── metadata_scrapper.py
+├── scrape_discourse.py
+├── faiss_index.idx
 ├── discourse_posts.json
 ├── embedding_data.json
 ├── embedding_md_data.json
 ├── embedding_combined.json
-├── faiss_index.idx
 ├── image.txt
 ├── project-tds-virtual-ta-q1.webp
-├── project-tds-virtual-ta-promptfoo.yaml
-├── LICENSE
-├── README.md
-├── requirements.txt
+├── test.yaml
+├── tds_pages_md/
+└── pycache/
 ```
 
 ---
