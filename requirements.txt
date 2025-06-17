@@ -16,3 +16,5 @@ pytesseract==0.3.10
 python-multipart==0.0.9  # If you later support file upload
 
 python-dotenv==1.0.0  # For loading environment variables
+
+mangum

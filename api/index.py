@@ -153,3 +153,11 @@ async def handle_query(data: QueryRequest):
     links = [{"url": r["url"], "text": r["topic_title"]} for r in results]
 
     return {"answer": answer, "links": links}
+
+# Vercel requires this to handle all routes
+def vercel_handler(request: Request):
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"message": "Not Found"}, status_code=404)
+
+from mangum import Mangum
+handler = Mangum(app)
