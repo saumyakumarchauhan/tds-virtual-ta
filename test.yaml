@@ -22,7 +22,7 @@ defaultTest:
         headers:
           Content-Type: application/json
           Authorization: >-
-            Bearer <your_openai_api_key_here>
+            Bearer <your-api-key>
         body: |
           {
             "model": "gpt-4o-mini",
