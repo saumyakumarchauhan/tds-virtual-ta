@@ -127,29 +127,45 @@ def generate_answer(query: str, context_texts: list) -> str:
 # Endpoint to handle question + optional image
 @app.post("/api/", response_model=QueryResponse)
 async def handle_query(data: QueryRequest):
-    question = data.question.strip()
+    question = data.question.strip() if data.question else ""
     ocr_text = ""
+
+    # If both question and image are missing, return error
+    if not question and not data.image:
+        raise HTTPException(status_code=400, detail="Either 'question' or 'image' must be provided.")
 
     # OCR processing if image provided
     if data.image:
         try:
             decoded_img = base64.b64decode(data.image)
             img = Image.open(BytesIO(decoded_img))
-            img = img.convert("L")  # Convert to grayscale
+            img = img.convert("L")  # Grayscale
             ocr_text = pytesseract.image_to_string(img).strip()
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 image provided or OCR failed")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Image OCR failed: {str(e)}")
 
-    # Retrieve relevant context
+    # Use OCR text as query if no question was asked
+    if not question and ocr_text:
+        question = ocr_text
+
+    # Retrieve forum context
     results = retrieve(question, top_k=10)
     context_texts = [r['combined_text'] for r in results]
 
-    # Add OCR text to context if available
+    # Include image-based OCR content at the top if present
     if ocr_text:
         context_texts.insert(0, f"[Text extracted from image]:\n{ocr_text}")
 
-    # Generate answer
-    answer = generate_answer(question, context_texts)
+    # Fallback if context is empty
+    if not context_texts:
+        context_texts.append("No relevant forum context found.")
+
+    # Try generating answer
+    try:
+        answer = generate_answer(question, context_texts)
+    except Exception as e:
+        answer = f"Sorry, something went wrong while generating the answer. (Error: {str(e)})"
+
     links = [{"url": r["url"], "text": r["topic_title"]} for r in results]
 
     return {"answer": answer, "links": links}
