@@ -6,52 +6,55 @@ import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 
-# Load both JSONs
-with open("embedding_data.json", "r", encoding="utf-8") as f1:
-    discourse_data = json.load(f1)
+# === Load the model ===
+model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
+print(" Model loaded")
 
-with open("embedding_md_data.json", "r", encoding="utf-8") as f2:
-    md_data = json.load(f2)
+# === Load Discourse embeddings ===
+with open("embedding_data.json", "r", encoding="utf-8") as f:
+    discourse_data = json.load(f)
 
-# Load model
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# === Load Markdown embeddings ===
+with open("embedding_md_data.json", "r", encoding="utf-8") as f:
+    md_data = json.load(f)
 
-# Collect all texts and metadata
+# === Prepare combined text and metadata ===
 all_texts = []
 metadata = []
 
-# Discourse
+# Process Discourse data
 for item in discourse_data:
-    all_texts.append(item["combined_text"])
+    text = item["combined_text"]
+    all_texts.append(text)
     item["source"] = "discourse"
     metadata.append(item)
 
-# Markdown
+# Process Markdown data
 for item in md_data:
-    all_texts.append(item["chunk"])
+    text = item["chunk"]
+    all_texts.append(text)
     metadata.append({
-        "combined_text": item["chunk"],
+        "combined_text": text,
         "topic_title": "TDS Docs",
         "topic_id": "md",
         "url": item["original_url"],
         "source": "markdown"
     })
 
-# Compute embeddings
+# === Generate embeddings (normalized) ===
+print(" Generating embeddings for", len(all_texts), "chunks...")
 embeddings = model.encode(all_texts, convert_to_numpy=True, normalize_embeddings=True).astype("float32")
+print(" Embeddings shape:", embeddings.shape)
 
-# Create FAISS index
-dim = embeddings.shape[1]
-index = faiss.IndexFlatIP(dim)  # Using Inner Product (dot product) with normalized vectors
-
-# Add embeddings
+# === Create FAISS index (Inner Product for normalized vectors) ===
+dimension = embeddings.shape[1]
+print(" Creating FAISS index with dimension:", dimension)
+index = faiss.IndexFlatIP(dimension)
 index.add(embeddings)
 
-# Save index and metadata
+# === Save FAISS index and metadata ===
 faiss.write_index(index, "faiss_index.idx")
-
-# Save unified metadata
 with open("embedding_combined.json", "w", encoding="utf-8") as f:
     json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-print("FAISS index and metadata created.")
+print(" FAISS index and combined metadata created successfully!")
