@@ -51,7 +51,7 @@ A FastAPI-based intelligent assistant built to support the **Tools in Data Scien
 
 ### 🔸 For Forum & Markdown
 
-- **Model Used**: `all-MiniLM-L6-v2` (from `sentence-transformers`)
+- **Model Used**: `multi-qa-mpnet-base-dot-v1` (from `sentence-transformers`)
 - Normalized and converted embeddings to `float32`
 
 ### 🔸 Files Generated
@@ -122,7 +122,7 @@ The project is also deployed live on Hugging Face Spaces, making it accessible d
 ### ✅ Hugging Face API Endpoint
 
 ```bash
-https://saumyakumar-tds-virtual-ta.hf.space/api/
+https://saumyakumar-tds-virtual-project.hf.space/api/
 ```
 
 ### 🔎 How to Use
@@ -132,7 +132,7 @@ Send a POST request similar to local testing, replacing the base URL with the ab
 Example:
 
 ```bash
-curl -X POST https://saumyakumar-tds-virtual-ta.hf.space/api/      -H "Content-Type: application/json"      -d '{"question": "What are deployment tools in TDS?"}'
+curl -X POST https://saumyakumar-tds-virtual-project.hf.space/api/      -H "Content-Type: application/json"      -d '{"question": "What are deployment tools in TDS?"}'
 ```
 
 This makes it convenient to integrate and test the application from anywhere without local setup.
