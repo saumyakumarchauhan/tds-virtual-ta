@@ -115,6 +115,30 @@ curl -X POST http://127.0.0.1:8000/api/   -H "Content-Type: application/json"   
 ```
 
 ---
+## 🌐 Hugging Face Deployment
+
+The project is also deployed live on Hugging Face Spaces, making it accessible directly via an API.
+
+### ✅ Hugging Face API Endpoint
+
+```bash
+https://saumyakumar-tds-virtual-ta.hf.space/api/
+```
+
+### 🔎 How to Use
+
+Send a POST request similar to local testing, replacing the base URL with the above endpoint.
+
+Example:
+
+```bash
+curl -X POST https://saumyakumar-tds-virtual-ta.hf.space/api/      -H "Content-Type: application/json"      -d '{"question": "What are deployment tools in TDS?"}'
+```
+
+This makes it convenient to integrate and test the application from anywhere without local setup.
+
+---
+
 
 ## 📁 Project Structure
 
