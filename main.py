@@ -4,39 +4,41 @@
 
 # main.py
 
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-from typing import Optional, List
-from sentence_transformers import SentenceTransformer
+import os
+import json
+import base64
 import numpy as np
 import faiss
 import httpx
-import json
-import base64
 from io import BytesIO
 from PIL import Image
 import pytesseract
-from slugify import slugify 
-import os
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import Optional, List
+from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
+import torch
+import re
 
-# Load .env variables
+# Load environment variables
 load_dotenv()
 AIPIPE_API_KEY = os.getenv("AIPIPE_API_KEY")
 AIPIPE_API_URL = os.getenv("AIPIPE_API_URL")
 
-app = FastAPI()
+# Model loading with GPU/CPU support
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = SentenceTransformer("multi-qa-mpnet-base-dot-v1", device=device)
 
-# Optional (Windows users): Uncomment and set the path to tesseract.exe
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
-# Load model and FAISS index
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# Load FAISS index and metadata
+index = faiss.read_index("faiss_index.idx")
 with open("embedding_combined.json", "r", encoding="utf-8") as f:
     embedding_data = json.load(f)
-index = faiss.read_index("faiss_index.idx")
 
-# Request and response models
+# FastAPI app
+app = FastAPI()
+
+# Request & Response Models
 class QueryRequest(BaseModel):
     question: str
     image: Optional[str] = None
@@ -48,54 +50,49 @@ class Link(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     links: List[Link]
-def build_discourse_url(window):
-    base_url = "https://discourse.onlinedegree.iitm.ac.in"
-    slug = slugify(window.get("topic_title", "discussion"))
-    topic_id = window.get("topic_id", "")
-    post_number = window.get("post_number", 1)
-    return f"{base_url}/t/{slug}/{topic_id}/{post_number}"
 
+# OCR Function
+def extract_ocr_text(image_base64):
+    try:
+        decoded_img = base64.b64decode(image_base64)
+        img = Image.open(BytesIO(decoded_img)).convert("L")
+        return pytesseract.image_to_string(img).strip()
+    except Exception as e:
+        return f"OCR failed: {str(e)}"
+
+# Semantic Search
 def retrieve(query, top_k=10):
     query_emb = model.encode(query, convert_to_numpy=True, normalize_embeddings=True).astype("float32")
-    D, I = index.search(np.array([query_emb]), top_k)
+    query_emb = np.array(query_emb, dtype="float32").reshape(1, -1)
+
+    print("Query embedding shape:", query_emb.shape)
+    print("Index expected dimension:", index.d)
+
+    D, I = index.search(query_emb, top_k)
 
     results = []
-    used_urls = set()
+    seen_urls = set()
 
     for score, idx in zip(D[0], I[0]):
         window = embedding_data[idx]
-        content = window.get("content", "")
-        url = window.get("url") or build_discourse_url(window)
-        used_urls.add(url)
+        text = window.get("combined_text", "")
+        url = window.get("url", "#")
+        url = re.sub(r'/\d+$', '', url) 
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
 
         results.append({
             "score": float(score),
-            "topic_id": window.get("topic_id", ""),
             "topic_title": window.get("topic_title", "Untitled"),
-            "combined_text": content[:500] + "...",
+            "combined_text": text[:700] + ("..." if len(text) > 700 else ""),
             "url": url
         })
-
-    # Ensure original URL is included if referenced in the query
-    for window in embedding_data:
-        if window.get("url") and window["url"] in query and window["url"] not in used_urls:
-            content = window.get("content", "")
-            results.append({
-                "score": 1.0,
-                "topic_id": window.get("topic_id", ""),
-                "topic_title": window.get("topic_title", "Untitled"),
-                "combined_text": content[:500] + "...",
-                "url": window["url"]
-            })
-            break
 
     return results
 
 
-
-
-
-# Use AIPipe proxy to generate an answer
+# LLM-based Answer Generation via AIPipe
 def generate_answer(query: str, context_texts: list) -> str:
     context = "\n\n---\n\n".join(context_texts)
     headers = {
@@ -106,67 +103,49 @@ def generate_answer(query: str, context_texts: list) -> str:
         "model": "gpt-4.1-mini",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant that answers questions based on forum discussions."},
-            {"role": "user", "content": f"Based on these forum excerpts:\n\n{context}\n\nQuestion: {query}\n\nAnswer:"}
+            {"role": "user", "content": f"Based on the following:\n\n{context}\n\nQuestion: {query}\n\nAnswer:"}
         ],
         "temperature": 0.3,
         "max_tokens": 400
     }
 
-    response = httpx.post(
-        AIPIPE_API_URL,
-        headers=headers,
-        json=payload,
-        timeout=25.0
-    )
+    try:
+        response = httpx.post(AIPIPE_API_URL, headers=headers, json=payload, timeout=30.0)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("choices", [{}])[0].get("message", {}).get("content", "Sorry, no response generated.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AIPipe Error: {str(e)}")
 
-    if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content']
-    else:
-        raise HTTPException(status_code=500, detail=f"AIPipe Error: {response.text}")
 
-# Endpoint to handle question + optional image
+# API Endpoint
 @app.post("/api/", response_model=QueryResponse)
 async def handle_query(data: QueryRequest):
-    question = data.question.strip() if data.question else ""
+    query = data.question.strip() if data.question else ""
     ocr_text = ""
 
-    # If both question and image are missing, return error
-    if not question and not data.image:
-        raise HTTPException(status_code=400, detail="Either 'question' or 'image' must be provided.")
+    if not query and not data.image:
+        raise HTTPException(status_code=400, detail="Please provide either a question or an image.")
 
-    # OCR processing if image provided
     if data.image:
-        try:
-            decoded_img = base64.b64decode(data.image)
-            img = Image.open(BytesIO(decoded_img))
-            img = img.convert("L")  # Grayscale
-            ocr_text = pytesseract.image_to_string(img).strip()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Image OCR failed: {str(e)}")
+        ocr_text = extract_ocr_text(data.image)
+        query = f"{query} {ocr_text}".strip()
 
-    # Use OCR text as query if no question was asked
-    if not question and ocr_text:
-        question = ocr_text
-
-    # Retrieve forum context
-    results = retrieve(question, top_k=10)
+    # Semantic Search
+    results = retrieve(query, top_k=10)
     context_texts = [r['combined_text'] for r in results]
 
-    # Include image-based OCR content at the top if present
     if ocr_text:
-        context_texts.insert(0, f"[Text extracted from image]:\n{ocr_text}")
-
-    # Fallback if context is empty
+        context_texts.insert(0, f"[Extracted from image]: {ocr_text}")
     if not context_texts:
-        context_texts.append("No relevant forum context found.")
+        context_texts.append("No context available.")
 
-    # Try generating answer
     try:
-        answer = generate_answer(question, context_texts)
+        answer = generate_answer(query, context_texts)
     except Exception as e:
-        answer = f"Sorry, something went wrong while generating the answer. (Error: {str(e)})"
+        answer = f"Error during answer generation: {str(e)}"
 
+    # Preserve full link titles and answers
     links = [{"url": r["url"], "text": r["topic_title"]} for r in results]
 
-    return {"answer": answer, "links": links}
-
+    return QueryResponse(answer=answer, links=[Link(**link) for link in links])
